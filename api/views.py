@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, permissions
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, mixins, permissions, viewsets
 from rest_framework.viewsets import ModelViewSet
 
 from .models import Group, Post, User
@@ -9,22 +10,20 @@ from .serializers import (CommentSerializer, FollowSerializer, GroupSerializer,
 
 
 class PostViewSet(ModelViewSet):
+    queryset = Post.objects.all()
     serializer_class = PostSerializer
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsAuthorOrReadOnlyPermission)
-
-    def get_queryset(self):
-        queryset = Post.objects.all()
-        group = self.request.query_params.get('group', None)
-        if group is not None:
-            queryset = queryset.filter(group=group)
-        return queryset
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ('group', )
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
 
-class GroupViewSet(ModelViewSet):
+class GroupViewSet(mixins.ListModelMixin,
+                   mixins.CreateModelMixin,
+                   viewsets.GenericViewSet):
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
@@ -41,15 +40,17 @@ class CommentViewSet(ModelViewSet):
         return post.comments.all()
 
     def perform_create(self, serializer):
-        get_object_or_404(Post, id=self.kwargs.get('id'))
-        serializer.save(author=self.request.user)
+        post = get_object_or_404(Post, id=self.kwargs.get('id'))
+        serializer.save(author=self.request.user, post=post)
 
 
-class FollowViewSet(ModelViewSet):
+class FollowViewSet(mixins.ListModelMixin,
+                    mixins.CreateModelMixin,
+                    viewsets.GenericViewSet):
     serializer_class = FollowSerializer
     permission_classes = (permissions.IsAuthenticated,)
     filter_backends = [filters.SearchFilter]
-    search_fields = ['user__username']
+    search_fields = ('user__username', 'following__username')
 
     def get_queryset(self):
         user = get_object_or_404(User, id=self.request.user.pk)
